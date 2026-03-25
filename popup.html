@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Xzen</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-logo">
+      <svg class="logo-icon" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M10 26 Q20 12 30 26" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <circle cx="20" cy="12" r="3.5" stroke="currentColor" stroke-width="2.5" fill="none"/>
+        <line x1="20" y1="29" x2="20" y2="36" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="14" y1="34" x2="26" y2="34" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-text">Xzen</span>
+    </div>
+    <div class="master-toggle-wrap">
+      <label class="toggle" aria-label="Enable or disable Xzen">
+        <input type="checkbox" id="masterToggle" />
+        <span class="toggle-track">
+          <span class="toggle-thumb"></span>
+        </span>
+      </label>
+    </div>
+  </header>
+
+  <!-- Status Banner -->
+  <div class="status-banner" id="statusBanner">
+    <span id="statusText">Zen mode active</span>
+  </div>
+
+  <!-- Main Content -->
+  <main class="main" id="mainContent">
+
+    <!-- Categories Section -->
+    <section class="section">
+      <h2 class="section-title">Filter Categories</h2>
+
+      <div class="category-list">
+
+        <div class="category-item">
+          <div class="category-info">
+            <span class="category-name">Politics &amp; Identity</span>
+            <span class="category-desc">Elections, parties, social policy, activism</span>
+          </div>
+          <label class="toggle" aria-label="Toggle politics and identity filter">
+            <input type="checkbox" class="category-toggle" data-category="politics" />
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+          </label>
+        </div>
+
+        <div class="category-item">
+          <div class="category-info">
+            <span class="category-name">Religion</span>
+            <span class="category-desc">Faith, scripture, religious debate</span>
+          </div>
+          <label class="toggle" aria-label="Toggle religion filter">
+            <input type="checkbox" class="category-toggle" data-category="religion" />
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+          </label>
+        </div>
+
+        <div class="category-item">
+          <div class="category-info">
+            <span class="category-name">Controversial</span>
+            <span class="category-desc">Outrage, cancel culture, misinformation</span>
+          </div>
+          <label class="toggle" aria-label="Toggle controversial content filter">
+            <input type="checkbox" class="category-toggle" data-category="controversial" />
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+          </label>
+        </div>
+
+        <div class="category-item">
+          <div class="category-info">
+            <span class="category-name">Flag Emojis in Names</span>
+            <span class="category-desc">Hide tweets from accounts with 🏳️ flags in display name</span>
+          </div>
+          <label class="toggle" aria-label="Toggle flag emoji filter">
+            <input type="checkbox" class="category-toggle" data-category="flagEmojis" />
+            <span class="toggle-track">
+              <span class="toggle-thumb"></span>
+            </span>
+          </label>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Divider -->
+    <div class="divider"></div>
+
+    <!-- Custom Keywords Section -->
+    <section class="section">
+      <h2 class="section-title">Custom Keywords</h2>
+
+      <div class="keyword-input-row">
+        <input
+          type="text"
+          id="keywordInput"
+          class="keyword-input"
+          placeholder="Add a keyword..."
+          maxlength="60"
+          autocomplete="off"
+          aria-label="New keyword"
+        />
+        <button id="addKeywordBtn" class="btn-add" aria-label="Add keyword">Add</button>
+      </div>
+
+      <ul class="keyword-list" id="keywordList" aria-label="Active custom keywords">
+        <!-- Populated by popup.js -->
+      </ul>
+
+      <p class="keyword-empty" id="keywordEmpty">No custom keywords yet.</p>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span>Your feed. Your peace.</span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
