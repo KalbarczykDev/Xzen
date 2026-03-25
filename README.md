@@ -1,8 +1,8 @@
 # Xzen
 
-A Chrome extension that filters your X (Twitter) feed so you can scroll in peace.
+> **Save your cortisol when scrolling Twitter/X.**
 
-When a post matches your active filters, the tweet is replaced with a calming gradient placeholder. You can reveal any hidden post individually with one click.
+A Chrome extension that filters your X (Twitter) feed so you can scroll without the noise. When a post matches your active filters, it's replaced with a calming gradient placeholder. You can reveal any hidden post individually with one click.
 
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-6366f1) ![Chrome](https://img.shields.io/badge/Chrome-Extension-4285F4)
 

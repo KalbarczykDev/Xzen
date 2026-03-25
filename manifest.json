@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Xzen",
   "version": "1.0.0",
-  "description": "Maintain your Zen on X by filtering out content that disrupts your peace.",
+  "description": "Save your cortisol when scrolling Twitter/X.",
   "permissions": [
     "storage",
     "activeTab"
