@@ -1,9 +1,11 @@
 // content.js — Xzen Content Script
-// Watches the X.com feed via MutationObserver and replaces flagged tweets
-// with a calming Zen placeholder.
+// Watches the X.com feed via MutationObserver and mutates flagged tweets
+// in-place: replaces the text and swaps images for the cortisol meme.
 
 (() => {
   'use strict';
+
+  const MEME_URL = chrome.runtime.getURL('meme.jpg');
 
   // ─── Keyword Definitions ────────────────────────────────────────────────────
 
@@ -34,14 +36,17 @@
     ]
   };
 
+  const CATEGORY_LABELS = {
+    politics: 'politics',
+    religion: 'religion',
+    controversial: 'controversial content'
+  };
+
   // ─── Flag Emoji Detection ────────────────────────────────────────────────────
 
-  // Matches any pair of Regional Indicator Symbols (U+1F1E6–U+1F1FF) = a country flag emoji.
-  // Also matches the England/Scotland/Wales subdivision flags (black flag + tag sequence).
   const FLAG_EMOJI_RE = /\p{RI}\p{RI}|\uD83C\uDFF4[\uDB40\uDC67\uDB40\uDC62][\s\S]*?\uDB40\uDC7F/u;
 
   function authorHasFlagEmoji(article) {
-    // X renders the display name in [data-testid="User-Name"] > span elements
     const nameEl = article.querySelector('[data-testid="User-Name"]');
     if (!nameEl) return false;
     return FLAG_EMOJI_RE.test(nameEl.textContent);
@@ -55,171 +60,123 @@
     customKeywords: []
   };
 
-  // WeakSet to track already-processed tweet articles (avoids reprocessing)
+  // Tracks articles already processed (mutated or checked and passed)
   const processed = new WeakSet();
 
   // ─── Settings Loading ────────────────────────────────────────────────────────
 
   function loadSettings(callback) {
     chrome.storage.local.get('xzenSettings', (result) => {
-      if (result.xzenSettings) {
-        settings = result.xzenSettings;
-      }
+      if (result.xzenSettings) settings = result.xzenSettings;
       if (callback) callback();
     });
   }
 
-  // ─── Keyword Matching ────────────────────────────────────────────────────────
+  // ─── Match Reason Detection ───────────────────────────────────────────────────
+  // Returns an array of human-readable reasons the tweet was flagged,
+  // or an empty array if it doesn't match.
 
-  function buildActiveKeywords() {
-    const keywords = [];
-    for (const [category, active] of Object.entries(settings.categories)) {
-      if (active && CATEGORY_KEYWORDS[category]) {
-        keywords.push(...CATEGORY_KEYWORDS[category]);
-      }
+  function getMatchReasons(article) {
+    const reasons = [];
+
+    if (settings.categories.flagEmojis && authorHasFlagEmoji(article)) {
+      reasons.push('flag emoji in name');
     }
-    keywords.push(...(settings.customKeywords || []));
-    // Deduplicate and lowercase
-    return [...new Set(keywords.map((k) => k.toLowerCase()))];
-  }
 
-  function tweetMatchesFilters(article, activeKeywords) {
-    // Flag emoji check (runs first — cheapest selector hit)
-    if (settings.categories.flagEmojis && authorHasFlagEmoji(article)) return true;
-
-    if (activeKeywords.length === 0) return false;
-
-    // Gather all text: tweet body + image alt texts
     const tweetTextEl = article.querySelector('[data-testid="tweetText"]');
     const tweetText = tweetTextEl ? tweetTextEl.innerText : '';
-
     const altTexts = [...article.querySelectorAll('img[alt]')]
       .map((img) => img.getAttribute('alt'))
       .join(' ');
-
     const combinedText = `${tweetText} ${altTexts}`.toLowerCase();
 
-    return activeKeywords.some((kw) => combinedText.includes(kw));
+    // Category keyword matches
+    for (const [cat, label] of Object.entries(CATEGORY_LABELS)) {
+      if (settings.categories[cat] && CATEGORY_KEYWORDS[cat]) {
+        if (CATEGORY_KEYWORDS[cat].some((kw) => combinedText.includes(kw))) {
+          reasons.push(label);
+        }
+      }
+    }
+
+    // Custom keyword matches
+    const matchedCustom = (settings.customKeywords || [])
+      .filter((kw) => combinedText.includes(kw.toLowerCase()));
+    matchedCustom.forEach((kw) => reasons.push(`"${kw}"`));
+
+    return reasons;
   }
 
-  // ─── Placeholder Creation ────────────────────────────────────────────────────
+  // ─── In-place Tweet Mutation ─────────────────────────────────────────────────
 
-  function createPlaceholder(hadImage) {
-    const placeholder = document.createElement('div');
-    placeholder.className = 'xzen-placeholder';
-    placeholder.setAttribute('role', 'status');
-    placeholder.setAttribute('aria-label', 'Content hidden by Xzen');
+  function mutateTweet(article, reasons) {
+    const reasonText = reasons.join(', ');
 
-    placeholder.innerHTML = `
-      <div class="xzen-inner">
-        <div class="xzen-icon">${hadImage ? peaceIconSVG() : zenIconSVG()}</div>
-        <p class="xzen-message">Content hidden to maintain your Zen.</p>
-        <button class="xzen-reveal" aria-label="Reveal hidden content">Reveal</button>
-      </div>
-    `;
+    // 1. Replace tweet text
+    const tweetTextEl = article.querySelector('[data-testid="tweetText"]');
+    if (tweetTextEl) {
+      tweetTextEl._xzenOriginalHTML = tweetTextEl.innerHTML;
+      tweetTextEl.innerHTML =
+        `<span class="xzen-msg">I wanted to spike your cortisol with: <strong>${reasonText}</strong></span>`;
+    }
 
-    // Reveal button — swap placeholder back with original content
-    placeholder.querySelector('.xzen-reveal').addEventListener('click', (e) => {
-      e.stopPropagation();
-      const original = placeholder._xzenOriginal;
-      if (original) {
-        placeholder.replaceWith(original);
-      }
+    // 2. Replace images with the meme
+    // X wraps tweet photos in [data-testid="tweetPhoto"]; cards use similar containers
+    const imgContainers = article.querySelectorAll(
+      '[data-testid="tweetPhoto"], [data-testid^="card"] img, [data-testid="tweet-image-container"]'
+    );
+
+    imgContainers.forEach((el) => {
+      const img = el.tagName === 'IMG' ? el : el.querySelector('img');
+      if (!img || img._xzenDone) return;
+      img._xzenDone = true;
+      img._xzenOriginalSrc    = img.src;
+      img._xzenOriginalSrcset = img.srcset;
+      img.src    = MEME_URL;
+      img.srcset = '';
+      img.style.objectFit = 'contain';
     });
 
-    return placeholder;
+    article.setAttribute('data-xzen', 'modified');
   }
 
-  function peaceIconSVG() {
-    return `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="32" cy="32" r="26"/>
-        <line x1="32" y1="6" x2="32" y2="58"/>
-        <line x1="32" y1="32" x2="12" y2="50"/>
-        <line x1="32" y1="32" x2="52" y2="50"/>
-      </svg>
-    `;
+  function restoreTweet(article) {
+    const tweetTextEl = article.querySelector('[data-testid="tweetText"]');
+    if (tweetTextEl && tweetTextEl._xzenOriginalHTML !== undefined) {
+      tweetTextEl.innerHTML = tweetTextEl._xzenOriginalHTML;
+      delete tweetTextEl._xzenOriginalHTML;
+    }
+
+    article.querySelectorAll('img').forEach((img) => {
+      if (!img._xzenDone) return;
+      img.src    = img._xzenOriginalSrc;
+      img.srcset = img._xzenOriginalSrcset;
+      img.style.objectFit = '';
+      delete img._xzenDone;
+      delete img._xzenOriginalSrc;
+      delete img._xzenOriginalSrcset;
+    });
+
+    article.removeAttribute('data-xzen');
+    processed.delete(article);
   }
 
-  function zenIconSVG() {
-    return `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M16 40 Q32 20 48 40"/>
-        <circle cx="32" cy="20" r="5"/>
-        <line x1="32" y1="44" x2="32" y2="56"/>
-        <line x1="22" y1="54" x2="42" y2="54"/>
-      </svg>
-    `;
-  }
-
-  // ─── Inline Styles (injected once) ──────────────────────────────────────────
+  // ─── Inline Styles ───────────────────────────────────────────────────────────
 
   function injectStyles() {
     if (document.getElementById('xzen-styles')) return;
     const style = document.createElement('style');
     style.id = 'xzen-styles';
     style.textContent = `
-      .xzen-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 120px;
-        margin: 0;
-        padding: 0;
-        border-radius: 16px;
-        background: linear-gradient(135deg, #e0f2fe 0%, #f0fdf4 50%, #fdf4ff 100%);
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        width: 100%;
-        box-sizing: border-box;
-        transition: opacity 0.3s ease;
-      }
-
-      .xzen-inner {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        padding: 20px 24px;
-        text-align: center;
-      }
-
-      .xzen-icon {
-        width: 42px;
-        height: 42px;
+      .xzen-msg {
+        font-style: italic;
         color: #64748b;
-        opacity: 0.7;
+        font-size: 15px;
+        line-height: 1.5;
       }
-
-      .xzen-icon svg {
-        width: 100%;
-        height: 100%;
-      }
-
-      .xzen-message {
-        margin: 0;
-        font-size: 14px;
-        color: #64748b;
-        font-weight: 400;
-        letter-spacing: 0.01em;
-      }
-
-      .xzen-reveal {
-        background: none;
-        border: 1px solid rgba(100, 116, 139, 0.4);
-        color: #64748b;
-        font-size: 12px;
-        padding: 4px 14px;
-        border-radius: 999px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        font-family: inherit;
-        letter-spacing: 0.02em;
-      }
-
-      .xzen-reveal:hover {
-        background: rgba(100, 116, 139, 0.1);
-        border-color: rgba(100, 116, 139, 0.6);
+      .xzen-msg strong {
+        color: #475569;
+        font-style: normal;
       }
     `;
     document.head.appendChild(style);
@@ -227,53 +184,26 @@
 
   // ─── Tweet Processing ────────────────────────────────────────────────────────
 
-  /**
-   * Attempt to find the outermost tweet container for clean replacement.
-   * X renders tweets inside <article> elements, wrapped in a <div> cell.
-   */
-  function getTweetContainer(article) {
-    // Walk up to find the list-item cell div that wraps the article
-    let el = article.parentElement;
-    for (let i = 0; i < 4; i++) {
-      if (!el) break;
-      const role = el.getAttribute('role');
-      if (role === 'listitem' || role === 'article') return el;
-      el = el.parentElement;
-    }
-    return article; // Fallback: replace the article itself
-  }
-
   function processTweet(article) {
     if (processed.has(article)) return;
     processed.add(article);
 
     if (!settings.enabled) return;
 
-    const activeKeywords = buildActiveKeywords();
-    if (!tweetMatchesFilters(article, activeKeywords)) return;
+    const reasons = getMatchReasons(article);
+    if (reasons.length === 0) return;
 
-    const hadImage = !!article.querySelector('img[alt]:not([alt=""])');
-    const placeholder = createPlaceholder(hadImage);
-
-    const container = getTweetContainer(article);
-
-    // Store original node so reveal can restore it
-    placeholder._xzenOriginal = container;
-
-    // Measure container height to avoid layout jumps
-    const height = container.offsetHeight;
-    if (height > 0) {
-      placeholder.style.minHeight = `${Math.min(height, 200)}px`;
-    }
-
-    container.replaceWith(placeholder);
+    mutateTweet(article, reasons);
   }
 
   // ─── Scan Existing Tweets ────────────────────────────────────────────────────
 
   function scanAll() {
-    const articles = document.querySelectorAll('article[data-testid="tweet"]');
-    articles.forEach(processTweet);
+    document.querySelectorAll('article[data-testid="tweet"]').forEach(processTweet);
+  }
+
+  function restoreAll() {
+    document.querySelectorAll('article[data-testid="tweet"][data-xzen]').forEach(restoreTweet);
   }
 
   // ─── MutationObserver ────────────────────────────────────────────────────────
@@ -282,21 +212,15 @@
 
   function startObserver() {
     if (observer) return;
-
     observer = new MutationObserver((mutations) => {
-      // Batch: collect new article nodes, then process in one rAF tick
       const newArticles = [];
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-          // Direct article match
           if (node.matches('article[data-testid="tweet"]')) {
             newArticles.push(node);
           } else {
-            node.querySelectorAll('article[data-testid="tweet"]').forEach((a) => {
-              newArticles.push(a);
-            });
+            node.querySelectorAll('article[data-testid="tweet"]').forEach((a) => newArticles.push(a));
           }
         }
       }
@@ -304,15 +228,11 @@
         requestAnimationFrame(() => newArticles.forEach(processTweet));
       }
     });
-
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
   function stopObserver() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
+    if (observer) { observer.disconnect(); observer = null; }
   }
 
   // ─── Settings Change Listener ─────────────────────────────────────────────────
@@ -326,10 +246,7 @@
         scanAll();
       } else {
         stopObserver();
-        // Remove all existing placeholders — restore originals
-        document.querySelectorAll('.xzen-placeholder').forEach((ph) => {
-          if (ph._xzenOriginal) ph.replaceWith(ph._xzenOriginal);
-        });
+        restoreAll();
       }
     }
   });
@@ -340,7 +257,6 @@
     if (settings.enabled) {
       injectStyles();
       startObserver();
-      // Defer initial scan slightly to let the SPA render its first batch
       setTimeout(scanAll, 800);
     }
   });
